@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { Api, Session } from './api'
 import { formatItem } from './itemText'
 import { applyServerItems, visibleItems } from './listState'
+import { Members } from './Members'
 import type { ListSummary } from './types'
 import { useListSync } from './useListSync'
 import { useOnline } from './useOnline'
@@ -10,12 +11,15 @@ interface Props {
   api: Api
   session: Session
   list: ListSummary
+  onClose: () => void
 }
 
 const newId = () => crypto.randomUUID()
 
-export function ListPage({ api, session, list }: Props) {
-  const { state, people, link, pending, mutate, update } = useListSync(api, session.accessToken, session.email, list.id)
+export function ListPage({ api, session, list, onClose }: Props) {
+  const [membersKey, setMembersKey] = useState(0)
+  const membersChanged = useCallback(() => setMembersKey((k) => k + 1), [])
+  const { state, people, link, pending, mutate, update } = useListSync(api, session.accessToken, session.email, list.id, membersChanged)
   const online = useOnline()
   const [text, setText] = useState('')
   const items = visibleItems(state)
@@ -93,6 +97,7 @@ export function ListPage({ api, session, list }: Props) {
       <button className="secondary" disabled={status === 'offline'} onClick={() => void mergeDuplicates().catch(() => undefined)}>
         Merge duplicates
       </button>
+      <Members api={api} listId={list.id} online={online} refreshKey={membersKey} onGone={onClose} />
     </section>
   )
 }

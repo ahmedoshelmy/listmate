@@ -49,6 +49,11 @@ internal sealed class InMemoryListStore : IListStore
 
     public void Add(ProcessedMutation processed) => _pending.Add(processed);
 
+    public void Remove(SharedList list) => _pending.Add(new Removal(list));
+
+    public Task<IReadOnlyDictionary<string, string>> UserNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<string, string>>(userIds.ToDictionary(id => id, id => $"{id}@example.com"));
+
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         if (ConflictsToSimulate > 0)
@@ -64,6 +69,7 @@ internal sealed class InMemoryListStore : IListStore
                 case SharedList list: Lists[list.Id] = list; break;
                 case ListItem item: Items[item.Id] = item; break;
                 case ProcessedMutation processed: Processed.Add(processed.MutationId, processed); break;
+                case Removal removal: Lists.Remove(removal.List.Id); break;
             }
         }
 
@@ -73,4 +79,6 @@ internal sealed class InMemoryListStore : IListStore
     }
 
     public void DiscardChanges() => _pending.Clear();
+
+    private sealed record Removal(SharedList List);
 }

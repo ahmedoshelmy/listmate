@@ -18,6 +18,14 @@ export interface ListSummary {
   memberCount: number
 }
 
+export interface Member {
+  userId: string
+  /** Email of the member. */
+  name: string
+  role: 'Owner' | 'Editor'
+  isYou: boolean
+}
+
 export interface ListSnapshot {
   list: ListSummary
   version: number

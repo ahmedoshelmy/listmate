@@ -9,6 +9,8 @@ internal sealed class RecordingNotifier : IListNotifier
 
     public List<Guid> Joins { get; } = [];
 
+    public List<(Guid ListId, string UserId)> Leaves { get; } = [];
+
     public Task ItemsChangedAsync(Guid listId, long listVersion, IReadOnlyList<ItemDto> items, CancellationToken cancellationToken)
     {
         Changes.AddRange(items.Select(i => (listId, listVersion, i)));
@@ -18,6 +20,12 @@ internal sealed class RecordingNotifier : IListNotifier
     public Task MemberJoinedAsync(Guid listId, string userId, CancellationToken cancellationToken)
     {
         Joins.Add(listId);
+        return Task.CompletedTask;
+    }
+
+    public Task MemberLeftAsync(Guid listId, string userId, CancellationToken cancellationToken)
+    {
+        Leaves.Add((listId, userId));
         return Task.CompletedTask;
     }
 }

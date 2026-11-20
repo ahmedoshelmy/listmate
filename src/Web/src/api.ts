@@ -1,5 +1,5 @@
 import { PermanentSyncError } from './outbox'
-import type { ListChanges, ListSnapshot, ListSummary, Mutation, SyncResponse } from './types'
+import type { ListChanges, ListSnapshot, ListSummary, Member, Mutation, SyncResponse } from './types'
 
 const TOKEN_KEY = 'listmate.session'
 
@@ -56,6 +56,10 @@ export function createApi(token: string) {
       request<ListSummary>('/api/lists/join', { method: 'POST', body: JSON.stringify({ inviteCode }) }, token),
     snapshot: (listId: string) => request<ListSnapshot>(`/api/lists/${listId}`, {}, token),
     changes: (listId: string, since: number) => request<ListChanges>(`/api/lists/${listId}/changes?since=${since}`, {}, token),
+    members: (listId: string) => request<Member[]>(`/api/lists/${listId}/members`, {}, token),
+    leave: (listId: string) => request<void>(`/api/lists/${listId}/leave`, { method: 'POST' }, token),
+    removeMember: (listId: string, userId: string) =>
+      request<void>(`/api/lists/${listId}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }, token),
     mergeDuplicates: (listId: string) => request<ListChanges>(`/api/lists/${listId}/merge-duplicates`, { method: 'POST' }, token),
     sync: async (mutations: Mutation[]) => {
       try {

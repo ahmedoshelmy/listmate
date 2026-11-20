@@ -27,6 +27,8 @@ public sealed record ListSnapshotDto(ListSummaryDto List, long Version, IReadOnl
 /// <summary>Everything that changed after a version, tombstones included: what a device fetches after a reconnect.</summary>
 public sealed record ListChangesDto(Guid ListId, long Since, long Version, IReadOnlyList<ItemDto> Items);
 
+public sealed record MemberDto(string UserId, string Name, string Role, bool IsYou);
+
 public sealed record CreateListRequest(string Name);
 
 public sealed record JoinListRequest(string InviteCode);

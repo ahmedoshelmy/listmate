@@ -55,6 +55,51 @@ public sealed class SharedList
         return true;
     }
 
+    public bool IsOwner(string userId) => _members.Exists(m => m.UserId == userId && m.Role == MemberRole.Owner);
+
+    /// <summary>
+    /// Takes the user off the list. An owner who leaves hands the list to the longest-standing member, so a list with
+    /// members always has an owner; the last one out leaves an empty list for the caller to delete.
+    /// </summary>
+    public LeaveOutcome Leave(string userId)
+    {
+        var member = _members.Find(m => m.UserId == userId);
+        if (member is null)
+        {
+            return LeaveOutcome.NotAMember;
+        }
+
+        _members.Remove(member);
+        if (_members.Count == 0)
+        {
+            return LeaveOutcome.LastMemberLeft;
+        }
+
+        if (member.Role != MemberRole.Owner || _members.Exists(m => m.Role == MemberRole.Owner))
+        {
+            return LeaveOutcome.Left;
+        }
+
+        _members.OrderBy(m => m.JoinedAt).ThenBy(m => m.UserId, StringComparer.Ordinal).First().PromoteToOwner();
+        return LeaveOutcome.LeftAndHandedOver;
+    }
+
+    /// <summary>The owner takes someone else off the list; their devices lose access on their next request.</summary>
+    public RemoveMemberOutcome RemoveMember(string ownerId, string memberId)
+    {
+        if (!IsOwner(ownerId))
+        {
+            return RemoveMemberOutcome.OnlyTheOwnerCanRemove;
+        }
+
+        if (ownerId == memberId)
+        {
+            return RemoveMemberOutcome.UseLeave;
+        }
+
+        return _members.RemoveAll(m => m.UserId == memberId) == 1 ? RemoveMemberOutcome.Removed : RemoveMemberOutcome.NotAMember;
+    }
+
     public void Rename(string name) => Name = NormalizeName(name);
 
     /// <summary>Claims the next list version for a change that is about to be written.</summary>

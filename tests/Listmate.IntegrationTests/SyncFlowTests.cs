@@ -3,8 +3,10 @@ using System.Net.Http.Json;
 using Listmate.Api.Hubs;
 using Listmate.Application.Lists;
 using Listmate.Application.Sync;
+using Listmate.Infrastructure.Retention;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Listmate.IntegrationTests;
 
@@ -108,6 +110,69 @@ public sealed class SyncFlowTests(ListmateApp app)
         await using var hub = app.Hub(stranger);
         await hub.StartAsync();
         await Should.ThrowAsync<HubException>(() => hub.InvokeAsync(nameof(ListsHub.JoinList), list.Id));
+    }
+
+    [Fact]
+    public async Task A_removed_member_is_told_live_then_gets_no_more_changes_and_no_access()
+    {
+        var (alex, sam, list) = await SharedListAsync();
+        var members = await sam.Http.GetFromJsonAsync<MemberDto[]>($"/api/lists/{list.Id}/members");
+        members!.Select(m => (m.Name, m.Role)).ShouldBe([(alex.Email, "Owner"), (sam.Email, "Editor")]);
+        var samId = members!.Single(m => m.IsYou).UserId;
+
+        await using var hub = app.Hub(sam);
+        var removed = new TaskCompletionSource<MemberLeftMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changesAfterRemoval = 0;
+        hub.On<MemberLeftMessage>(nameof(IListsClient.MemberLeft), m => removed.TrySetResult(m));
+        hub.On<ItemChangedMessage>(nameof(IListsClient.ItemChanged), _ => Interlocked.Increment(ref changesAfterRemoval));
+        await hub.StartAsync();
+        await hub.InvokeAsync(nameof(ListsHub.JoinList), list.Id);
+
+        var alexId = members!.Single(m => !m.IsYou).UserId;
+        (await sam.Http.DeleteAsync($"/api/lists/{list.Id}/members/{alexId}")).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await alex.Http.DeleteAsync($"/api/lists/{list.Id}/members/{samId}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        (await removed.Task.WaitAsync(Timeout)).UserId.ShouldBe(samId);
+        await SyncAsync(alex, Add(list.Id, Guid.NewGuid(), "after removal"));
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        changesAfterRemoval.ShouldBe(0);
+        (await sam.Http.GetAsync($"/api/lists/{list.Id}")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await PostSyncAsync(sam, new SyncRequest([Add(list.Id, Guid.NewGuid(), "sneaky")]))).Results.ShouldAllBe(r => r.Status != "applied");
+    }
+
+    [Fact]
+    public async Task Leaving_hands_over_ownership_and_the_last_one_out_deletes_the_list()
+    {
+        var (alex, sam, list) = await SharedListAsync();
+        await SyncAsync(alex, Add(list.Id, Guid.NewGuid(), "milk"));
+
+        (await alex.Http.PostAsync($"/api/lists/{list.Id}/leave", null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await sam.Http.GetFromJsonAsync<MemberDto[]>($"/api/lists/{list.Id}/members"))!.ShouldHaveSingleItem().Role.ShouldBe("Owner");
+
+        (await sam.Http.PostAsync($"/api/lists/{list.Id}/leave", null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await app.ScalarAsync("select count(*) from lists where \"Id\" = @list", list.Id)).ShouldBe(0);
+        (await app.ScalarAsync("select count(*) from list_items where \"ListId\" = @list", list.Id)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Retention_prunes_only_processed_mutations_past_the_window()
+    {
+        var listId = Guid.NewGuid();
+        (await app.ScalarAsync(
+            """
+            with inserted as (
+              insert into processed_mutations ("MutationId", "UserId", "ListId", "Status", "ProcessedAt")
+              values (gen_random_uuid(), 'u', @list, 'applied', now() - interval '45 days'),
+                     (gen_random_uuid(), 'u', @list, 'applied', now() - interval '2 days')
+              returning 1)
+            select count(*) from inserted
+            """,
+            listId)).ShouldBe(2);
+
+        await using var scope = app.Factory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<ProcessedMutationPruner>().PruneAsync(CancellationToken.None)).ShouldBeGreaterThanOrEqualTo(1);
+
+        (await app.ScalarAsync("select count(*) from processed_mutations where \"ListId\" = @list", listId)).ShouldBe(1);
     }
 
     [Fact]

@@ -32,6 +32,12 @@ public interface IListStore
 
     void Add(ProcessedMutation processed);
 
+    /// <summary>Deletes the list with its items and memberships.</summary>
+    void Remove(SharedList list);
+
+    /// <summary>Display names (emails) of these users, for the member list.</summary>
+    Task<IReadOnlyDictionary<string, string>> UserNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
+
     /// <exception cref="ConcurrencyConflictException">Another writer changed the same list first.</exception>
     Task SaveChangesAsync(CancellationToken cancellationToken);
 

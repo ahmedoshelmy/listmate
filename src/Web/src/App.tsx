@@ -42,7 +42,7 @@ export function App() {
         </button>
       </header>
       {open ? (
-        <ListPage api={api} session={session} list={open} />
+        <ListPage api={api} session={session} list={open} onClose={() => setOpen(null)} />
       ) : (
         <ListsPage api={api} onOpen={setOpen} onUnauthorized={signOut} />
       )}

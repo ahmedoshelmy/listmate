@@ -39,4 +39,10 @@ echo "A added '2x milk' (replay was a duplicate)"
 
 SEEN=$(curl -fsS "$BASE/api/lists/$LIST_ID" -H "Authorization: Bearer $B" | json "['items'][0]")
 echo "B sees: $SEEN"
-echo "$SEEN" | grep -q "'quantity': 2" && echo "SMOKE PASS"
+echo "$SEEN" | grep -q "'quantity': 2"
+
+post "/api/lists/$LIST_ID/leave" "" "$B" >/dev/null
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/lists/$LIST_ID" -H "Authorization: Bearer $B")" = 404 ]
+MEMBERS=$(curl -fsS "$BASE/api/lists/$LIST_ID/members" -H "Authorization: Bearer $A" | json "")
+echo "B left the list and lost access; members now: $MEMBERS"
+echo "SMOKE PASS"

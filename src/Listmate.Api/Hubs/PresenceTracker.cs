@@ -7,9 +7,9 @@ namespace Listmate.Api.Hubs;
 public sealed class PresenceTracker
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<Guid, Dictionary<string, string>> _byList = [];
+    private readonly Dictionary<Guid, Dictionary<string, Seat>> _byList = [];
 
-    public IReadOnlyList<string> Join(Guid listId, string connectionId, string person)
+    public IReadOnlyList<string> Join(Guid listId, string connectionId, string userId, string person)
     {
         lock (_gate)
         {
@@ -19,7 +19,7 @@ public sealed class PresenceTracker
                 _byList[listId] = connections;
             }
 
-            connections[connectionId] = person;
+            connections[connectionId] = new Seat(userId, person);
             return People(connections);
         }
     }
@@ -29,6 +29,17 @@ public sealed class PresenceTracker
         lock (_gate)
         {
             return LeaveLocked(listId, connectionId);
+        }
+    }
+
+    /// <summary>This replica's connections of one person that have the list open (to evict them when they leave it).</summary>
+    public IReadOnlyList<string> ConnectionsOf(Guid listId, string userId)
+    {
+        lock (_gate)
+        {
+            return _byList.TryGetValue(listId, out var connections)
+                ? [.. connections.Where(c => c.Value.UserId == userId).Select(c => c.Key)]
+                : [];
         }
     }
 
@@ -58,6 +69,8 @@ public sealed class PresenceTracker
         return People(connections);
     }
 
-    private static string[] People(Dictionary<string, string> connections) =>
-        [.. connections.Values.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+    private static string[] People(Dictionary<string, Seat> connections) =>
+        [.. connections.Values.Select(s => s.Person).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+
+    private sealed record Seat(string UserId, string Person);
 }

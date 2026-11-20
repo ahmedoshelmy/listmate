@@ -29,6 +29,21 @@ internal static class ListEndpoints
         api.MapGet("/lists/{listId:guid}/changes", (Guid listId, long? since, ClaimsPrincipal user, ListService lists, CancellationToken ct) =>
             lists.ChangesSinceAsync(user.UserId(), listId, since ?? 0, ct));
 
+        api.MapGet("/lists/{listId:guid}/members", (Guid listId, ClaimsPrincipal user, ListService lists, CancellationToken ct) =>
+            lists.MembersAsync(user.UserId(), listId, ct));
+
+        api.MapPost("/lists/{listId:guid}/leave", async (Guid listId, ClaimsPrincipal user, ListService lists, CancellationToken ct) =>
+        {
+            await lists.LeaveAsync(user.UserId(), listId, ct);
+            return Results.NoContent();
+        });
+
+        api.MapDelete("/lists/{listId:guid}/members/{memberId}", async (Guid listId, string memberId, ClaimsPrincipal user, ListService lists, CancellationToken ct) =>
+        {
+            await lists.RemoveMemberAsync(user.UserId(), listId, memberId, ct);
+            return Results.NoContent();
+        });
+
         api.MapPost("/lists/{listId:guid}/merge-duplicates", (Guid listId, ClaimsPrincipal user, ListService lists, CancellationToken ct) =>
             lists.MergeDuplicatesAsync(user.UserId(), listId, ct));
 

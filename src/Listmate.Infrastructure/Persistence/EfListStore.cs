@@ -43,6 +43,13 @@ public sealed class EfListStore(ListmateDbContext db) : IListStore
 
     public void Add(ProcessedMutation processed) => db.ProcessedMutations.Add(processed);
 
+    public void Remove(SharedList list) => db.Lists.Remove(list);
+
+    public async Task<IReadOnlyDictionary<string, string>> UserNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken) =>
+        await db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.UserName ?? "someone", cancellationToken);
+
     public async Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         try

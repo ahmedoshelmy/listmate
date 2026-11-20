@@ -13,6 +13,8 @@ public interface IListsClient
     Task PresenceChanged(PresenceMessage message);
 
     Task MemberJoined(MemberJoinedMessage message);
+
+    Task MemberLeft(MemberLeftMessage message);
 }
 
 public sealed record ItemChangedMessage(Guid ListId, long ListVersion, ItemDto Item);
@@ -20,6 +22,9 @@ public sealed record ItemChangedMessage(Guid ListId, long ListVersion, ItemDto I
 public sealed record PresenceMessage(Guid ListId, IReadOnlyList<string> People);
 
 public sealed record MemberJoinedMessage(Guid ListId);
+
+/// <summary>Someone left or was removed; a client whose own <see cref="UserId"/> this is drops the list.</summary>
+public sealed record MemberLeftMessage(Guid ListId, string UserId);
 
 /// <summary>
 /// One SignalR group per list ("list:{id}"). A client calls <see cref="JoinList"/> for the list on screen; after a
@@ -32,13 +37,14 @@ public sealed class ListsHub(ListService lists, PresenceTracker presence) : Hub<
 
     public async Task JoinList(Guid listId)
     {
-        if (!await lists.IsMemberAsync(Context.User!.UserId(), listId, Context.ConnectionAborted))
+        var user = Context.User!;
+        if (!await lists.IsMemberAsync(user.UserId(), listId, Context.ConnectionAborted))
         {
             throw new HubException("List not found.");
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(listId), Context.ConnectionAborted);
-        var people = presence.Join(listId, Context.ConnectionId, Context.User?.Identity?.Name ?? "someone");
+        var people = presence.Join(listId, Context.ConnectionId, user.UserId(), user.Identity?.Name ?? "someone");
         await Clients.Group(GroupName(listId)).PresenceChanged(new PresenceMessage(listId, people));
     }
 

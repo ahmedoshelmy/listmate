@@ -70,3 +70,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 4px
 .pill.connecting { color: var(--warn); }
 .pill.offline { color: var(--error); }
 code { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+
+.members { border-top: 1px solid var(--border); padding-top: 12px; }
+.members summary { cursor: pointer; font-weight: 600; }
+.members ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }

@@ -72,4 +72,50 @@ public sealed class ListServiceTests
         snapshot.Items.ShouldHaveSingleItem().Quantity.ShouldBe(3);
         _f.Notifier.Changes.Count.ShouldBe(2);
     }
+
+    [Fact]
+    public async Task Members_are_listed_owner_first_with_names()
+    {
+        var list = await _f.SharedListAsync();
+
+        var members = await _f.Lists.MembersAsync(SyncFixture.Sam, list.Id, CancellationToken.None);
+
+        members.Select(m => (m.UserId, m.Role, m.IsYou)).ShouldBe([(SyncFixture.Alex, "Owner", false), (SyncFixture.Sam, "Editor", true)]);
+        members[0].Name.ShouldBe($"{SyncFixture.Alex}@example.com");
+    }
+
+    [Fact]
+    public async Task A_member_who_leaves_loses_access_and_the_list_is_told()
+    {
+        var list = await _f.SharedListAsync();
+
+        await _f.Lists.LeaveAsync(SyncFixture.Sam, list.Id, CancellationToken.None);
+
+        _f.Notifier.Leaves.ShouldBe([(list.Id, SyncFixture.Sam)]);
+        await Should.ThrowAsync<ListNotFoundException>(() => _f.Lists.SnapshotAsync(SyncFixture.Sam, list.Id, CancellationToken.None));
+        (await _f.Lists.MyListsAsync(SyncFixture.Alex, CancellationToken.None)).ShouldHaveSingleItem().MemberCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task The_last_member_leaving_deletes_the_list()
+    {
+        var list = await _f.Lists.CreateAsync(SyncFixture.Alex, new CreateListRequest("Solo"), CancellationToken.None);
+
+        await _f.Lists.LeaveAsync(SyncFixture.Alex, list.Id, CancellationToken.None);
+
+        (await _f.Lists.MyListsAsync(SyncFixture.Alex, CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_owner_removes_a_member_but_an_editor_may_not()
+    {
+        var list = await _f.SharedListAsync();
+
+        await Should.ThrowAsync<ListPermissionException>(() => _f.Lists.RemoveMemberAsync(SyncFixture.Sam, list.Id, SyncFixture.Alex, CancellationToken.None));
+        await Should.ThrowAsync<ArgumentException>(() => _f.Lists.RemoveMemberAsync(SyncFixture.Alex, list.Id, SyncFixture.Alex, CancellationToken.None));
+        await _f.Lists.RemoveMemberAsync(SyncFixture.Alex, list.Id, SyncFixture.Sam, CancellationToken.None);
+
+        _f.Notifier.Leaves.ShouldBe([(list.Id, SyncFixture.Sam)]);
+        (await _f.Lists.IsMemberAsync(SyncFixture.Sam, list.Id, CancellationToken.None)).ShouldBeFalse();
+    }
 }

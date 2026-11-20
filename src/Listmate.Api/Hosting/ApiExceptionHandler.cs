@@ -16,6 +16,7 @@ internal sealed class ApiExceptionHandler(IProblemDetailsService problems) : IEx
                 v.Errors.GroupBy(e => e.PropertyName).ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray()))
             { Status = StatusCodes.Status400BadRequest, Title = "The request is invalid." },
             ArgumentException a => new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "The request is invalid.", Detail = a.Message },
+            ListPermissionException p => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = p.Message },
             ListNotFoundException n => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = n.Message },
             ConcurrencyConflictException => new ProblemDetails
             {

@@ -36,3 +36,22 @@ public sealed class ListNotFoundException : Exception
     {
     }
 }
+
+/// <summary>The caller is a member but may not do this (only the owner removes people).</summary>
+public sealed class ListPermissionException : Exception
+{
+    public ListPermissionException()
+        : base("Only the list owner can do this.")
+    {
+    }
+
+    public ListPermissionException(string message)
+        : base(message)
+    {
+    }
+
+    public ListPermissionException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

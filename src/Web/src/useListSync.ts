@@ -20,7 +20,7 @@ interface ItemChangedMessage {
  * Keeps one list in sync: cached state first, then the server. Live pushes update items; the "caught up to version N"
  * bookmark only moves on snapshot/changes responses, so a missed push is always repaired by the next resync.
  */
-export function useListSync(api: Api, token: string, me: string, listId: string) {
+export function useListSync(api: Api, token: string, me: string, listId: string, onMembersChanged: () => void) {
   const [state, setState] = useState<ListState>(emptyState)
   const [people, setPeople] = useState<string[]>([])
   const [link, setLink] = useState<Link>('connecting')
@@ -107,6 +107,13 @@ export function useListSync(api: Api, token: string, me: string, listId: string)
     hub.on('ItemChanged', (m: ItemChangedMessage) => {
       if (m.listId === listId) update((s) => applyServerItems(s, [m.item]))
     })
+    // Someone joined, left or was removed (possibly this person): the page re-reads the member list.
+    hub.on('MemberJoined', (m: { listId: string }) => {
+      if (m.listId === listId) onMembersChanged()
+    })
+    hub.on('MemberLeft', (m: { listId: string }) => {
+      if (m.listId === listId) onMembersChanged()
+    })
     hub.on('PresenceChanged', (m: { listId: string; people: string[] }) => {
       if (m.listId === listId) setPeople(m.people)
     })
@@ -129,7 +136,7 @@ export function useListSync(api: Api, token: string, me: string, listId: string)
       window.removeEventListener('online', onOnline)
       void hub.stop()
     }
-  }, [listId, token, update, syncNow])
+  }, [listId, token, update, syncNow, onMembersChanged])
 
   return { state, people, link, pending, mutate, syncNow, update }
 }
