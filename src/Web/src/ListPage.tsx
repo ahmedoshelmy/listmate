@@ -44,7 +44,7 @@ export function ListPage({ api, session, list }: Props) {
       </div>
       <p className="muted">
         Invite code <code>{list.inviteCode}</code>
-        {people.length > 0 && <> · here now: {people.join(', ')}</>}
+        {status === 'live' && people.length > 0 && <> · here now: {people.join(', ')}</>}
       </p>
       <form
         className="row"

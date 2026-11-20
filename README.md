@@ -7,6 +7,8 @@ partner changed in the meantime.
 .NET 10 · ASP.NET Core · SignalR · EF Core + PostgreSQL · ASP.NET Core Identity · React PWA (IndexedDB outbox) ·
 Testcontainers · OpenTelemetry · Docker Compose
 
+<img src="docs/offline.png" alt="A list on a phone while offline: two changes waiting to sync, the new item marked not synced" width="320">
+
 ## What it does
 
 - **Accounts and sharing.** Register, create a list, share its 8-letter invite code; whoever enters it joins.
