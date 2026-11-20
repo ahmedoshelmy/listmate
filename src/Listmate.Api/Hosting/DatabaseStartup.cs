@@ -24,22 +24,23 @@ internal static class DatabaseStartup
     public static async Task PrepareDatabaseAsync(this WebApplication app)
     {
         var options = app.Configuration.GetSection(ListmateOptions.Section).Get<ListmateOptions>() ?? new ListmateOptions();
+        var ct = app.Lifetime.ApplicationStopping;
         await using var scope = app.Services.CreateAsyncScope();
         var services = scope.ServiceProvider;
         if (options.MigrateOnStartup)
         {
-            await services.GetRequiredService<ListmateDbContext>().Database.MigrateAsync();
+            await services.GetRequiredService<ListmateDbContext>().Database.MigrateAsync(ct);
         }
 
         if (options.SeedDemoData)
         {
-            await SeedAsync(services, options.DemoPassword ?? throw new InvalidOperationException("Listmate:DemoPassword is required to seed demo data."));
+            await SeedAsync(services, options.DemoPassword ?? throw new InvalidOperationException("Listmate:DemoPassword is required to seed demo data."), ct);
             app.Logger.LogInformation("Demo data ready");
         }
     }
 
     /// <summary>Invented accounts and lists so the app has something to show; runs only on an empty database.</summary>
-    private static async Task SeedAsync(IServiceProvider services, string password)
+    private static async Task SeedAsync(IServiceProvider services, string password, CancellationToken ct)
     {
         var users = services.GetRequiredService<UserManager<IdentityUser>>();
         if (await users.FindByEmailAsync("alex@example.com") is not null)
@@ -52,16 +53,16 @@ internal static class DatabaseStartup
         var lists = services.GetRequiredService<ListService>();
         var sync = services.GetRequiredService<SyncService>();
 
-        await SeedListAsync(lists, sync, alex.Id, sam.Id, "Weekly groceries", ["2x milk", "eggs x12", "bread", "tomatoes", "coffee"]);
-        await SeedListAsync(lists, sync, alex.Id, sam.Id, "Beach trip packing", ["sunscreen", "4 towels", "umbrella", "snacks"]);
+        await SeedListAsync(lists, sync, alex.Id, sam.Id, "Weekly groceries", ["2x milk", "eggs x12", "bread", "tomatoes", "coffee"], ct);
+        await SeedListAsync(lists, sync, alex.Id, sam.Id, "Beach trip packing", ["sunscreen", "4 towels", "umbrella", "snacks"], ct);
     }
 
-    private static async Task SeedListAsync(ListService lists, SyncService sync, string ownerId, string memberId, string name, string[] items)
+    private static async Task SeedListAsync(ListService lists, SyncService sync, string ownerId, string memberId, string name, string[] items, CancellationToken ct)
     {
-        var list = await lists.CreateAsync(ownerId, new CreateListRequest(name), CancellationToken.None);
-        await lists.JoinAsync(memberId, new JoinListRequest(list.InviteCode), CancellationToken.None);
+        var list = await lists.CreateAsync(ownerId, new CreateListRequest(name), ct);
+        await lists.JoinAsync(memberId, new JoinListRequest(list.InviteCode), ct);
         var mutations = items.Select(text => new MutationDto(Guid.NewGuid(), MutationTypes.Add, list.Id, Guid.NewGuid(), Text: text)).ToList();
-        await sync.ApplyAsync(ownerId, new SyncRequest(mutations), CancellationToken.None);
+        await sync.ApplyAsync(ownerId, new SyncRequest(mutations), ct);
     }
 
     private static async Task<IdentityUser> CreateUserAsync(UserManager<IdentityUser> users, string email, string password)
