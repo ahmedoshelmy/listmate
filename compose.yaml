@@ -29,6 +29,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=listmate;Username=${POSTGRES_USER:-listmate};Password=${POSTGRES_PASSWORD:-listmate}
       Listmate__SeedDemoData: ${LISTMATE_DEMO_DATA:-false}
       Listmate__DemoPassword: ${LISTMATE_DEMO_PASSWORD:-}
+      Retention__ProcessedMutationDays: ${LISTMATE_MUTATION_RETENTION_DAYS:-30}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     ports:
       - "5180:8080"
