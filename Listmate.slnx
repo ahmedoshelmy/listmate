@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Listmate.Domain/Listmate.Domain.csproj" />
+    <Project Path="src/Listmate.Application/Listmate.Application.csproj" />
+    <Project Path="src/Listmate.Infrastructure/Listmate.Infrastructure.csproj" />
+    <Project Path="src/Listmate.Api/Listmate.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Listmate.UnitTests/Listmate.UnitTests.csproj" />
+    <Project Path="tests/Listmate.IntegrationTests/Listmate.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
