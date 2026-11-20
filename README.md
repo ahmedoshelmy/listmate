@@ -1,0 +1,149 @@
+# Listmate
+
+**Shared lists that update live on every phone and keep working offline.** Groceries, packing, chores: tick items in
+the supermarket basement with no signal and they sync when you are back online, without overwriting what your
+partner changed in the meantime.
+
+.NET 10 · ASP.NET Core · SignalR · EF Core + PostgreSQL · ASP.NET Core Identity · React PWA (IndexedDB outbox) ·
+Testcontainers · OpenTelemetry · Docker Compose
+
+## What it does
+
+- **Accounts and sharing.** Register, create a list, share its 8-letter invite code; whoever enters it joins.
+- **Real time.** Everyone with the list open sees adds, ticks and deletes as they happen, and who else is there.
+- **Offline first.** Changes are queued in IndexedDB and shown immediately; the queue replays when the device is
+  back online, and a reconnecting device fetches everything it missed since its last known version.
+- **Exactly once.** Every change carries a client `mutationId`; replaying a batch (flaky network, double tap, two
+  tabs) never applies anything twice.
+- **Sensible merges.** Per-field last-writer-wins: your tick and my rename of the same item both survive. Delete wins
+  over edit.
+- **Merge duplicates.** `2x milk` + `milk` becomes `3x milk` with one tap.
+
+## Architecture
+
+One service with Clean Architecture layers — deliberately no microservices or broker
+([ADR 0002](docs/adr/0002-monolith-without-a-broker.md)).
+
+```mermaid
+flowchart LR
+  subgraph Devices
+    A["Phone A (PWA)<br/>IndexedDB outbox + cache"]
+    B["Phone B (PWA)"]
+  end
+  A -- "POST /api/sync<br/>mutations + mutationId" --> W[nginx web]
+  B -- "WebSocket /hubs/lists" --> W
+  W --> API["Listmate.Api<br/>REST · Identity · SignalR hub"]
+  API --> APP["Application<br/>SyncService · ListService"]
+  APP --> DOM["Domain<br/>ConflictRules · DuplicateMerger"]
+  APP --> INF["Infrastructure<br/>EF Core · xmin concurrency"]
+  INF --> PG[("Postgres<br/>lists · list_items · processed_mutations")]
+  API -- "ItemChanged → group list:{id}" --> A & B
+```
+
+| Project | Responsibility |
+|---|---|
+| `src/Listmate.Domain` | `SharedList` (members, invite code, version counter), `ListItem`, `ItemText` parser, `ConflictRules`, `DuplicateMerger`. No dependencies. |
+| `src/Listmate.Application` | `SyncService` (idempotent batch with retry on conflict), `ListService`, ports `IListStore` and `IListNotifier`, FluentValidation. |
+| `src/Listmate.Infrastructure` | `ListmateDbContext` (Identity + lists), `EfListStore`, migrations, `xmin` row versions. |
+| `src/Listmate.Api` | Minimal API endpoints, Identity API endpoints, `ListsHub` + presence, ProblemDetails, health, OpenTelemetry. |
+| `src/Web` | React + Vite PWA: outbox, list cache, live view, online/offline indicator, service worker. |
+
+The full protocol (mutations, statuses, versions, conflict rules, resync) is in
+**[docs/sync-protocol.md](docs/sync-protocol.md)**.
+
+## Quickstart
+
+Needs Docker (or Podman with the Docker CLI).
+
+```bash
+cp .env.example .env            # optional: set LISTMATE_DEMO_DATA=true and a LISTMATE_DEMO_PASSWORD
+docker compose up -d --build --wait
+open http://localhost:8080       # the PWA; the API is also on http://localhost:5180
+scripts/smoke.sh                 # two users, one shared list, an item added by one and read by the other
+docker compose down -v
+```
+
+With demo data on, sign in as `alex@example.com` or `sam@example.com` (password from your `.env`) to find
+"Weekly groceries" and "Beach trip packing" already shared between them. Open the same list in two browsers,
+switch one to offline in dev tools, tick a few items, go back online, and watch the other one catch up.
+
+Traces and metrics: `OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889 docker compose --profile obs up -d`,
+then the Aspire dashboard on http://localhost:18888.
+
+### Local development
+
+```bash
+docker compose up -d postgres
+dotnet run --project src/Listmate.Api   # http://localhost:5180, migrates on start
+cd src/Web && npm ci && npm run dev      # http://localhost:5173, proxies /api and /hubs to the API
+```
+
+The API reads `ConnectionStrings__Postgres` (default compose credentials work with
+`Host=localhost;Database=listmate;Username=listmate;Password=listmate` when you publish the Postgres port).
+
+### Tests
+
+```bash
+dotnet test                               # unit + Testcontainers integration tests (needs Docker)
+cd src/Web && npm test                    # outbox, list state and parser tests
+```
+
+- **Unit tests:** item text parsing, merge `2x milk` + `milk`, every conflict rule, replayed `mutationId` is a no-op,
+  stale `baseVersion` merges, retry on concurrency conflicts, validation, presence, and the Clean Architecture
+  dependency rule.
+- **Integration tests** (real Postgres in a container, API in-process, real SignalR client): user B receives
+  `ItemChanged` when user A ticks an item; an offline batch of five mutations replayed twice — two copies racing,
+  then a third — is applied once; resync with `changes?since=N` returns tombstones; strangers get 404/401.
+
+## API sketch
+
+| Method | Path | |
+|---|---|---|
+| POST | `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh` | Identity API endpoints (bearer tokens) |
+| GET / POST | `/api/lists` | My lists / create a list |
+| POST | `/api/lists/join` | Join with `{ "inviteCode": "ABCDEFGH" }` |
+| GET | `/api/lists/{id}` | Snapshot: list, version, items |
+| GET | `/api/lists/{id}/changes?since=N` | Items changed after version N, tombstones included |
+| POST | `/api/lists/{id}/merge-duplicates` | Fold duplicate open items |
+| POST | `/api/sync` | Apply a batch of mutations exactly once |
+| WS | `/hubs/lists` | `JoinList(id)`, `LeaveList(id)`; server sends `ItemChanged`, `PresenceChanged`, `MemberJoined` |
+| GET | `/health/live`, `/health/ready` | Liveness; readiness includes the database |
+
+## Design notes (talking points)
+
+1. **Offline sync without a CRDT.** The client outbox stores intent mutations with idempotency keys and client-chosen
+   item ids. The server applies a batch in one transaction together with a `processed_mutations` row per id, so a
+   replay is a primary-key lookup, not guesswork. Conflicts resolve per field in server order; delete wins. Why this
+   and not Automerge/Yjs: [ADR 0003](docs/adr/0003-sync-protocol-lww-not-crdt.md).
+2. **Optimistic concurrency that serialises per list.** Every change bumps the list's version, so two batches racing
+   on one list collide on Postgres' `xmin` row version; the loser discards its unit of work, re-reads and retries
+   (bounded). The integration test fires the same batch twice in parallel and checks it lands once.
+3. **Never lose a message.** SignalR pushes are hints, the database is the truth. Each list has a gap-free version
+   counter; a device's bookmark only moves on snapshot/changes responses, so after any reconnect
+   `GET changes?since=N` repairs whatever the socket missed, deletes included.
+4. **A monolith on purpose.** One bounded context, one transaction per batch: no broker, no saga, no eventual
+   consistency to explain. Scale-out is SignalR's Redis backplane plus shared Data Protection keys, not services
+   ([ADR 0002](docs/adr/0002-monolith-without-a-broker.md)).
+5. **Framework auth, done properly.** Identity API endpoints give register/login/refresh with bearer tokens; the hub
+   reads the token from the query string only on `/hubs` ([ADR 0004](docs/adr/0004-identity-api-endpoints.md)).
+6. **Clean Architecture you can test.** The domain is plain C#; the application layer depends on two ports, so the
+   sync rules are unit-tested with an in-memory store, and the architecture test fails the build on a layer leak.
+
+## Status
+
+MVP done: everything above runs in Compose and in CI. Next steps, in order: two API replicas behind nginx with a
+Redis backplane (`scale` profile) and shared presence, a retention job for `processed_mutations`, a Flutter client,
+recurring lists, and an optional free-model "sort into aisles".
+
+Known limits: presence is per API instance; concurrent edits of the same item name keep the last one; there is no
+"leave list" or member removal yet.
+
+## Extracted from Lingo
+
+Listmate is extracted from **Lingo**, a private personal-assistant app, where shared to-do and grocery lists, the
+"merge duplicates" action and the phone's offline outbox were first written in TypeScript and Dart. This repository
+is a clean re-implementation in .NET and React with a fresh history and invented sample data only.
+
+## License
+
+[MIT](LICENSE)
