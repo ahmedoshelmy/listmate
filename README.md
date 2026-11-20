@@ -161,6 +161,13 @@ cd src/Web && npm test                    # outbox, list state and parser tests
 8. **Clean Architecture you can test.** The domain is plain C#; the application layer depends on two ports, so the
    sync rules are unit-tested with an in-memory store, and the architecture test fails the build on a layer leak.
 
+## Azure (optional)
+
+`infra/main.bicep` describes Azure Container Apps (consumption) for the API and the web front, Postgres Flexible
+Server (B1ms) and, with `enableRedis=true`, Azure Cache for Redis (Basic C0, not free) so the API can run up to three
+replicas. Deployment is manual and optional; CI only compiles the Bicep. It has not been deployed: the images need
+pushing to a registry, and the web's nginx upstream (`api:8080`) must point at the API app's internal ingress.
+
 ## Status
 
 MVP and the scale-out profile are done and run in Compose and in CI. Next steps: presence in Redis (it is per replica

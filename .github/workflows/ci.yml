@@ -76,3 +76,9 @@ jobs:
         run: docker compose -f compose.yaml -f compose.scale.yaml logs
       - if: always()
         run: docker compose -f compose.yaml -f compose.scale.yaml down -v
+
+  bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: az bicep build --file infra/main.bicep --stdout > /dev/null
