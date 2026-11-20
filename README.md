@@ -1,5 +1,12 @@
 # Listmate
 
+[![CI](https://github.com/ahmedoshelmy/listmate/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedoshelmy/listmate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![React PWA](https://img.shields.io/badge/React-PWA-3178C6?logo=typescript&logoColor=white)](https://react.dev/)
+
+Part of the [systems portfolio](https://github.com/ahmedoshelmy/systems-portfolio).
+
 **Shared lists that update live on every phone and keep working offline.** Groceries, packing, chores: tick items in
 the supermarket basement with no signal and they sync when you are back online, without overwriting what your
 partner changed in the meantime.
