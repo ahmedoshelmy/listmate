@@ -1,0 +1,57 @@
+# Scale-out demo: two API replicas behind nginx round-robin, sharing SignalR messages and the token key ring via Redis.
+#   docker compose -f compose.yaml -f compose.scale.yaml up -d --build --wait
+#   node scripts/scale-smoke.mjs     (hub on replica A, write through replica B)
+x-redis-env: &redis-env
+  ConnectionStrings__Redis: redis:6379
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  api:
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      <<: *redis-env
+
+  api-b:
+    image: listmate-api
+    restart: unless-stopped
+    depends_on:
+      # Started after the first replica so only one of them runs the migrations.
+      api: { condition: service_healthy }
+    environment:
+      <<: *redis-env
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=listmate;Username=${POSTGRES_USER:-listmate};Password=${POSTGRES_PASSWORD:-listmate}
+      Listmate__MigrateOnStartup: "false"
+    ports:
+      - "5181:8080"
+    healthcheck:
+      test: ["CMD", "dotnet", "Listmate.Api.dll", "--probe", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  web:
+    depends_on:
+      api-b: { condition: service_healthy }
+    build:
+      context: src/Web
+      args: { NGINX_CONF: nginx.scale.conf }
+    image: listmate-web-scale

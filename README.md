@@ -40,6 +40,7 @@ flowchart LR
   APP --> INF["Infrastructure<br/>EF Core · xmin concurrency"]
   INF --> PG[("Postgres<br/>lists · list_items · processed_mutations")]
   API -- "ItemChanged → group list:{id}" --> A & B
+  API -. "backplane + key ring<br/>(compose.scale.yaml)" .- R[("Redis")]
 ```
 
 | Project | Responsibility |
@@ -71,6 +72,19 @@ switch one to offline in dev tools, tick a few items, go back online, and watch 
 
 Traces and metrics: `OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889 docker compose --profile obs up -d`,
 then the Aspire dashboard on http://localhost:18888.
+
+### Scale-out: two replicas, one Redis
+
+```bash
+docker compose -f compose.yaml -f compose.scale.yaml up -d --build --wait
+(cd src/Web && npm ci) && node scripts/scale-smoke.mjs
+docker compose -f compose.yaml -f compose.scale.yaml down -v
+```
+
+nginx round-robins over two API replicas with no sticky sessions (the PWA connects with WebSockets and skips the
+negotiate request). Redis carries SignalR group messages between replicas and holds the shared Data Protection key
+ring, so a token issued by one replica works on the other. `scale-smoke.mjs` proves both: it signs in on replica B,
+calls replica A with that token, connects a hub client to A and writes through B.
 
 ### Local development
 
@@ -123,8 +137,9 @@ cd src/Web && npm test                    # outbox, list state and parser tests
 3. **Never lose a message.** SignalR pushes are hints, the database is the truth. Each list has a gap-free version
    counter; a device's bookmark only moves on snapshot/changes responses, so after any reconnect
    `GET changes?since=N` repairs whatever the socket missed, deletes included.
-4. **A monolith on purpose.** One bounded context, one transaction per batch: no broker, no saga, no eventual
-   consistency to explain. Scale-out is SignalR's Redis backplane plus shared Data Protection keys, not services
+4. **A monolith on purpose, and it still scales out.** One bounded context, one transaction per batch: no broker, no
+   saga, no eventual consistency to explain. Scale-out is SignalR's Redis backplane plus shared Data Protection
+   keys behind a round-robin balancer, demonstrated by `compose.scale.yaml` and checked in CI
    ([ADR 0002](docs/adr/0002-monolith-without-a-broker.md)).
 5. **Framework auth, done properly.** Identity API endpoints give register/login/refresh with bearer tokens; the hub
    reads the token from the query string only on `/hubs` ([ADR 0004](docs/adr/0004-identity-api-endpoints.md)).
@@ -133,11 +148,11 @@ cd src/Web && npm test                    # outbox, list state and parser tests
 
 ## Status
 
-MVP done: everything above runs in Compose and in CI. Next steps, in order: two API replicas behind nginx with a
-Redis backplane (`scale` profile) and shared presence, a retention job for `processed_mutations`, a Flutter client,
-recurring lists, and an optional free-model "sort into aisles".
+MVP and the scale-out profile are done and run in Compose and in CI. Next steps: presence in Redis (it is per replica
+today), a retention job for `processed_mutations`, a Flutter client, recurring lists, and an optional free-model
+"sort into aisles".
 
-Known limits: presence is per API instance; concurrent edits of the same item name keep the last one; there is no
+Known limits: with several replicas, presence only lists people connected to the same replica; concurrent edits of the same item name keep the last one; there is no
 "leave list" or member removal yet.
 
 ## Extracted from Lingo

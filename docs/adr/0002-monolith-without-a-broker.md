@@ -19,7 +19,9 @@ calls `IListNotifier`, implemented with `IHubContext` sending to the SignalR gro
 - One deployable, one database, one transaction per sync batch: exactly-once is a primary key, not a saga.
 - A notification can be lost if the process dies between commit and send. That is acceptable because notifications
   are hints: every client resyncs with `changes?since=N` on (re)connect, and the database is the source of truth.
-- Scale-out works without a broker: several API replicas share Postgres, and the SignalR Redis backplane carries
-  group messages between replicas. Presence would then need a shared store (it is in memory today).
+- Scale-out works without a broker: several API replicas share Postgres, the SignalR Redis backplane carries
+  group messages between replicas, and the Data Protection key ring lives in Redis so bearer tokens are valid on
+  every replica (`compose.scale.yaml`, `scripts/scale-smoke.mjs`). Presence would need a shared store too (it is
+  in memory per replica today).
 - If another context appears (for example price lookups or AI aisle sorting), it gets its own service and talks
   to this one through events, not by sharing tables.

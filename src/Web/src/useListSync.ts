@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr'
+import { HttpTransportType, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr'
 import type { Api } from './api'
 import { applyLocal, applyServerItems, emptyState, type ListState } from './listState'
 import { Outbox } from './outbox'
@@ -99,7 +99,8 @@ export function useListSync(api: Api, token: string, me: string, listId: string)
 
   useEffect(() => {
     const hub = new HubConnectionBuilder()
-      .withUrl('/hubs/lists', { accessTokenFactory: () => token })
+      // WebSockets without the negotiate round trip: no sticky sessions needed behind a round-robin load balancer.
+      .withUrl('/hubs/lists', { accessTokenFactory: () => token, skipNegotiation: true, transport: HttpTransportType.WebSockets })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build()
