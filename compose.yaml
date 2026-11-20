@@ -1,0 +1,77 @@
+name: listmate
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: listmate
+      POSTGRES_USER: ${POSTGRES_USER:-listmate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-listmate}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d listmate"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  api:
+    build: .
+    image: listmate-api
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=listmate;Username=${POSTGRES_USER:-listmate};Password=${POSTGRES_PASSWORD:-listmate}
+      Listmate__SeedDemoData: ${LISTMATE_DEMO_DATA:-false}
+      Listmate__DemoPassword: ${LISTMATE_DEMO_PASSWORD:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    ports:
+      - "5180:8080"
+    healthcheck:
+      test: ["CMD", "dotnet", "Listmate.Api.dll", "--probe", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  web:
+    build: src/Web
+    image: listmate-web
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  # Traces, metrics and logs: docker compose --profile obs up, with OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.5
+    profiles: [obs]
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "18888:18888"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+volumes:
+  pgdata:

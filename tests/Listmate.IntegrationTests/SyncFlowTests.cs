@@ -111,6 +111,17 @@ public sealed class SyncFlowTests(ListmateApp app)
     }
 
     [Fact]
+    public async Task Demo_accounts_share_the_seeded_lists()
+    {
+        var sam = await app.SignInAsync("sam@example.com");
+
+        var lists = await sam.Http.GetFromJsonAsync<ListSummaryDto[]>("/api/lists");
+        lists!.Select(l => l.Name).ShouldBe(["Weekly groceries", "Beach trip packing"], ignoreOrder: true);
+        var groceries = await sam.Http.GetFromJsonAsync<ListSnapshotDto>($"/api/lists/{lists!.Single(l => l.Name == "Weekly groceries").Id}");
+        groceries!.Items.ShouldContain(i => i.Name == "eggs" && i.Quantity == 12);
+    }
+
+    [Fact]
     public async Task Health_endpoints_answer()
     {
         var http = app.Factory.CreateClient();

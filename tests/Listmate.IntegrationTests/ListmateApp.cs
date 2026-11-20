@@ -34,9 +34,15 @@ public sealed class ListmateApp : IAsyncLifetime
     public async Task<User> SignUpAsync(string name)
     {
         var email = $"{name}-{Guid.NewGuid():N}@example.com";
-        var credentials = new { email, password = "Demo-pass-1" };
         var http = Factory.CreateClient();
-        (await http.PostAsJsonAsync("/api/auth/register", credentials)).EnsureSuccessStatusCode();
+        (await http.PostAsJsonAsync("/api/auth/register", new { email, password = DemoPassword })).EnsureSuccessStatusCode();
+        return await SignInAsync(email);
+    }
+
+    public async Task<User> SignInAsync(string email)
+    {
+        var credentials = new { email, password = DemoPassword };
+        var http = Factory.CreateClient();
         var login = await http.PostAsJsonAsync("/api/auth/login", credentials);
         login.EnsureSuccessStatusCode();
         var token = (await login.Content.ReadFromJsonAsync<LoginResponse>())!.AccessToken;
@@ -64,12 +70,16 @@ public sealed class ListmateApp : IAsyncLifetime
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    public const string DemoPassword = "Demo-pass-1";
+
     private sealed class ApiFactory(string connectionString) : WebApplicationFactory<ListsHub>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("ConnectionStrings:Postgres", connectionString);
+            builder.UseSetting("Listmate:SeedDemoData", "true");
+            builder.UseSetting("Listmate:DemoPassword", DemoPassword);
         }
     }
 
