@@ -31,7 +31,7 @@ builder.Services.Configure<BearerTokenOptions>(IdentityConstants.BearerScheme, o
     },
 });
 builder.Services.AddAuthorization();
-builder.Services.AddSignalR();
+builder.AddScaleOut(builder.Services.AddSignalR());
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddScoped<IListNotifier, SignalRListNotifier>();
 builder.Services.AddProblemDetails();
