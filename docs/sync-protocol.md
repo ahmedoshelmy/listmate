@@ -109,3 +109,15 @@ outbox, then fetches `changes?since=bookmark`.
 `POST /api/lists/{id}/merge-duplicates` folds open (unticked) items with the same name, ignoring case and spacing:
 `2x milk` + `milk` → `3x milk`. The oldest item survives so its id stays stable everywhere; the others become
 tombstones. It is an ordinary change: new versions, broadcast, visible in `changes`.
+
+## Membership changes and retention
+
+- `POST /api/lists/{id}/leave` and the owner's `DELETE /api/lists/{id}/members/{userId}` take effect at once: the
+  next request from that person's devices gets 404 for the list, and queued mutations for it come back `rejected`.
+  The server sends `MemberLeft` to the list's group first (so the person's open screens close the list), then removes
+  their connections on that replica from the group. An owner who leaves hands the list to the longest-standing member;
+  the last one out deletes the list and its items.
+- `processed_mutations` is pruned by a background sweep (every `Retention:SweepEveryHours`, default 6) of rows older
+  than `Retention:ProcessedMutationDays` (default 30). This bounds the table, at a price: a device that stays offline
+  longer than the window and then replays could apply a mutation twice. Adds are still safe (the client-chosen item
+  id already exists); ticks and edits are last-writer-wins anyway. Pick a window longer than any realistic offline spell.

@@ -7,7 +7,7 @@ partner changed in the meantime.
 .NET 10 · ASP.NET Core · SignalR · EF Core + PostgreSQL · ASP.NET Core Identity · React PWA (IndexedDB outbox) ·
 Testcontainers · OpenTelemetry · Docker Compose
 
-<img src="docs/offline.png" alt="A list on a phone while offline: two changes waiting to sync, the new item marked not synced" width="320">
+<img src="docs/offline.png" alt="A list on a phone while offline: two changes waiting to sync, the new item marked not synced" width="320"> <img src="docs/members.png" alt="A shared list live, with the members panel open: the owner can remove people, anyone can leave" width="320">
 
 ## What it does
 
@@ -20,6 +20,8 @@ Testcontainers · OpenTelemetry · Docker Compose
 - **Sensible merges.** Per-field last-writer-wins: your tick and my rename of the same item both survive. Delete wins
   over edit.
 - **Merge duplicates.** `2x milk` + `milk` becomes `3x milk` with one tap.
+- **Members.** See who is on a list; leave it, or (as the owner) remove someone. Access ends at once and their
+  open screens are told live. An owner who leaves hands over; the last one out deletes the list.
 
 ## Architecture
 
@@ -61,7 +63,7 @@ Needs Docker (or Podman with the Docker CLI).
 ```bash
 cp .env.example .env            # optional: set LISTMATE_DEMO_DATA=true and a LISTMATE_DEMO_PASSWORD
 docker compose up -d --build --wait
-open http://localhost:8080       # the PWA; the API is also on http://localhost:5180
+# open http://localhost:8080 for the PWA; the API is also on http://localhost:5180
 scripts/smoke.sh                 # two users, one shared list, an item added by one and read by the other
 docker compose down -v
 ```
@@ -105,11 +107,13 @@ cd src/Web && npm test                    # outbox, list state and parser tests
 ```
 
 - **Unit tests:** item text parsing, merge `2x milk` + `milk`, every conflict rule, replayed `mutationId` is a no-op,
-  stale `baseVersion` merges, retry on concurrency conflicts, validation, presence, and the Clean Architecture
+  stale `baseVersion` merges, retry on concurrency conflicts, validation, presence, leave/remove rules, and the Clean Architecture
   dependency rule.
 - **Integration tests** (real Postgres in a container, API in-process, real SignalR client): user B receives
   `ItemChanged` when user A ticks an item; an offline batch of five mutations replayed twice — two copies racing,
-  then a third — is applied once; resync with `changes?since=N` returns tombstones; strangers get 404/401.
+  then a third — is applied once; resync with `changes?since=N` returns tombstones; strangers get 404/401; a removed
+  member is told live and gets no further pushes; leaving hands over and the last one out deletes the list; the
+  retention sweep prunes only old mutation ids.
 
 ## API sketch
 
@@ -120,12 +124,15 @@ cd src/Web && npm test                    # outbox, list state and parser tests
 | POST | `/api/lists/join` | Join with `{ "inviteCode": "ABCDEFGH" }` |
 | GET | `/api/lists/{id}` | Snapshot: list, version, items |
 | GET | `/api/lists/{id}/changes?since=N` | Items changed after version N, tombstones included |
+| GET | `/api/lists/{id}/members` | Members with role; `isYou` marks the caller |
+| POST | `/api/lists/{id}/leave` | Leave (owner hands over; last one out deletes the list) |
+| DELETE | `/api/lists/{id}/members/{userId}` | Owner removes a member (403 for editors) |
 | POST | `/api/lists/{id}/merge-duplicates` | Fold duplicate open items |
 | POST | `/api/sync` | Apply a batch of mutations exactly once |
-| WS | `/hubs/lists` | `JoinList(id)`, `LeaveList(id)`; server sends `ItemChanged`, `PresenceChanged`, `MemberJoined` |
+| WS | `/hubs/lists` | `JoinList(id)`, `LeaveList(id)`; server sends `ItemChanged`, `PresenceChanged`, `MemberJoined`, `MemberLeft` |
 | GET | `/health/live`, `/health/ready` | Liveness; readiness includes the database |
 
-## Design notes (talking points)
+## Interview talking points (design notes)
 
 1. **Offline sync without a CRDT.** The client outbox stores intent mutations with idempotency keys and client-chosen
    item ids. The server applies a batch in one transaction together with a `processed_mutations` row per id, so a
@@ -143,17 +150,25 @@ cd src/Web && npm test                    # outbox, list state and parser tests
    ([ADR 0002](docs/adr/0002-monolith-without-a-broker.md)).
 5. **Framework auth, done properly.** Identity API endpoints give register/login/refresh with bearer tokens; the hub
    reads the token from the query string only on `/hubs` ([ADR 0004](docs/adr/0004-identity-api-endpoints.md)).
-6. **Clean Architecture you can test.** The domain is plain C#; the application layer depends on two ports, so the
+6. **Idempotency has a shelf life.** The `processed_mutations` log would grow forever, so a `BackgroundService` on a
+   `PeriodicTimer` (driven by `TimeProvider`) prunes rows past a configurable window with one set-based
+   `ExecuteDeleteAsync`. Every replica may run it — the delete is idempotent — and the trade-off (a device offline
+   longer than the window could replay) is written down in [docs/sync-protocol.md](docs/sync-protocol.md).
+7. **Revoking access in a real-time app.** Removing a member is a domain rule (only the owner; never yourself; an
+   owner who leaves hands over), but the hard part is the socket: the server tells the group, then evicts that
+   person's connections from the SignalR group so no further pushes reach them, and every REST/sync call re-checks
+   membership anyway.
+8. **Clean Architecture you can test.** The domain is plain C#; the application layer depends on two ports, so the
    sync rules are unit-tested with an in-memory store, and the architecture test fails the build on a layer leak.
 
 ## Status
 
 MVP and the scale-out profile are done and run in Compose and in CI. Next steps: presence in Redis (it is per replica
-today), a retention job for `processed_mutations`, a Flutter client, recurring lists, and an optional free-model
+today), a Flutter client, recurring lists, and an optional free-model
 "sort into aisles".
 
-Known limits: with several replicas, presence only lists people connected to the same replica; concurrent edits of the same item name keep the last one; there is no
-"leave list" or member removal yet.
+Known limits: with several replicas, presence only lists people connected to the same replica; concurrent edits of the same item name keep the last one; a removed member's live connections are evicted
+only on the replica that handled the removal (their REST and sync calls are refused everywhere).
 
 ## Extracted from Lingo
 
