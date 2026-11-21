@@ -111,14 +111,15 @@ calls replica A with that token, connects a hub client to A and writes through B
 
 ### Local development
 
+Compose keeps Postgres on its internal network, so for a host-run API start a Postgres with a published port:
+
 ```bash
-docker compose up -d postgres
+docker run -d --name listmate-pg -p 5432:5432 \
+  -e POSTGRES_DB=listmate -e POSTGRES_USER=listmate -e POSTGRES_PASSWORD=listmate postgres:17-alpine
+export ConnectionStrings__Postgres="Host=localhost;Database=listmate;Username=listmate;Password=listmate"
 dotnet run --project src/Listmate.Api   # http://localhost:5180, migrates on start
 cd src/Web && npm ci && npm run dev      # http://localhost:5173, proxies /api and /hubs to the API
 ```
-
-The API reads `ConnectionStrings__Postgres` (default compose credentials work with
-`Host=localhost;Database=listmate;Username=listmate;Password=listmate` when you publish the Postgres port).
 
 ### Tests
 
