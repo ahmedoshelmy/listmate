@@ -63,6 +63,20 @@ flowchart LR
 The full protocol (mutations, statuses, versions, conflict rules, resync) is in
 **[docs/sync-protocol.md](docs/sync-protocol.md)**.
 
+## Run in Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ahmedoshelmy/listmate)
+
+The repo carries a dev container (`.devcontainer/`: .NET 10, Node 22, Docker-in-Docker), so it opens as-is in GitHub
+Codespaces or VS Code Dev Containers and restores the NuGet and npm packages on create. Then one command:
+
+```bash
+docker compose up -d --build --wait
+```
+
+Open the **Web (PWA)** port (8080) from the Ports tab; the API is forwarded on 5180. For the two demo users, prefix the
+command with `LISTMATE_DEMO_DATA=true LISTMATE_DEMO_PASSWORD=<any password>`.
+
 ## Quickstart
 
 Needs Docker (or Podman with the Docker CLI).

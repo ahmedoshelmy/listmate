@@ -1,0 +1,23 @@
+{
+  "name": "Listmate",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+  "forwardPorts": [8080, 5180, 18888],
+  "portsAttributes": {
+    "8080": { "label": "Web (PWA)", "onAutoForward": "openBrowser" },
+    "5180": { "label": "API" },
+    "18888": { "label": "Aspire dashboard (--profile obs)" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "silent" },
+  "postCreateCommand": "dotnet restore Listmate.slnx && npm ci --prefix src/Web",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-dotnettools.csdevkit", "ms-azuretools.vscode-docker", "dbaeumer.vscode-eslint"]
+    }
+  }
+}
